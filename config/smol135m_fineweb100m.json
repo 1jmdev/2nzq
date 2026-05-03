@@ -1,0 +1,32 @@
+{
+  "model": {
+    "name": "HuggingFaceTB/SmolLM-135M"
+  },
+  "data": {
+    "dataset_name": "HuggingFaceFW/fineweb",
+    "dataset_config": "sample-10BT",
+    "split": "train",
+    "max_bytes": 100000000,
+    "tokenized_path": "data/fineweb_smol135m_100mb_seq1024.pt",
+    "retokenize": false
+  },
+  "quantization": {
+    "group_size": 128,
+    "quantize_lm_head": false
+  },
+  "training": {
+    "sequence_length": 1024,
+    "batch_size": 1,
+    "gradient_accumulation_steps": 16,
+    "total_steps": 1000,
+    "learning_rate": 0.00002,
+    "scale_learning_rate": 0.0002,
+    "weight_decay": 0.1,
+    "beta1": 0.9,
+    "beta2": 0.95,
+    "max_grad_norm": 1.0,
+    "tau_k": 10.0
+  },
+  "output_dir": "runs/smol135m-2nzq",
+  "export_name": "model.2nzq.pt"
+}
