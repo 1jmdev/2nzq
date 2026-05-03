@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 from pathlib import Path
+from typing import Iterator
 
 import torch
 from torch.utils.data import DataLoader
@@ -70,14 +71,22 @@ def train(cfg: dict) -> Path:
     step = 0
     optimizer.zero_grad(set_to_none=True)
     progress = tqdm(total=total_steps, desc="PQAFT")
+    data_iter: Iterator[dict[str, torch.Tensor]] = iter(loader)
     while step < total_steps:
-        for batch in loader:
-            tau = pqaft_tau(step, total_steps, k=float(cfg["training"].get("tau_k", 10.0)))
-            set_tau(model, tau)
-            factor = pqaft_lr_factor(step, total_steps)
-            optimizer.param_groups[0]["lr"] = base_lr * factor
-            optimizer.param_groups[1]["lr"] = scale_lr * factor
+        tau = pqaft_tau(step, total_steps, k=float(cfg["training"].get("tau_k", 10.0)))
+        set_tau(model, tau)
+        factor = pqaft_lr_factor(step, total_steps)
+        optimizer.param_groups[0]["lr"] = base_lr * factor
+        optimizer.param_groups[1]["lr"] = scale_lr * factor
 
+        optimizer.zero_grad(set_to_none=True)
+        total_loss = 0.0
+        for _ in range(grad_accum):
+            try:
+                batch = next(data_iter)
+            except StopIteration:
+                data_iter = iter(loader)
+                batch = next(data_iter)
             batch = {k: v.to(device) for k, v in batch.items()}
             outputs = model(**batch)
             loss = outputs.loss / grad_accum
@@ -86,18 +95,15 @@ def train(cfg: dict) -> Path:
                     f"Non-finite loss at step {step}. Use training.dtype=float32 or lower the learning rates."
                 )
             loss.backward()
+            total_loss += loss.item()
 
-            if (step + 1) % grad_accum == 0:
-                torch.nn.utils.clip_grad_norm_(model.parameters(), float(cfg["training"].get("max_grad_norm", 1.0)))
-                optimizer.step()
-                clamp_scales(model)
-                optimizer.zero_grad(set_to_none=True)
+        torch.nn.utils.clip_grad_norm_(model.parameters(), float(cfg["training"].get("max_grad_norm", 1.0)))
+        optimizer.step()
+        clamp_scales(model)
 
-            progress.set_postfix(loss=f"{loss.item() * grad_accum:.4f}", tau=f"{tau:.3f}")
-            progress.update(1)
-            step += 1
-            if step >= total_steps:
-                break
+        progress.set_postfix(loss=f"{total_loss:.4f}", tau=f"{tau:.3f}")
+        progress.update(1)
+        step += 1
     progress.close()
 
     set_tau(model, 1.0)

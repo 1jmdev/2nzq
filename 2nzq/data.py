@@ -68,4 +68,7 @@ class TokenBlockDataset(Dataset):
 
     def __getitem__(self, idx: int) -> dict[str, torch.Tensor]:
         ids = self.input_ids[idx]
-        return {"input_ids": ids[:-1], "labels": ids[1:]}
+        ids = ids[:-1]
+        # HF causal LM heads shift labels internally; passing pre-shifted labels
+        # trains the model to predict the wrong token offset.
+        return {"input_ids": ids, "labels": ids.clone()}
