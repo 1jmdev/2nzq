@@ -15,6 +15,7 @@
     "quantize_lm_head": false
   },
   "training": {
+    "dtype": "float32",
     "sequence_length": 1024,
     "batch_size": 1,
     "gradient_accumulation_steps": 16,

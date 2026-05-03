@@ -26,6 +26,14 @@ def save_2nzq_model(model: nn.Module, output_path: str | Path, base_model: str, 
         full_state = {k: v for k, v in full_state.items() if not k.startswith(prefix)}
 
     qdict = {name: _state_to_dict(state) for name, state in qstates.items()}
+    for name, state in qstates.items():
+        if not torch.isfinite(state.scales.float()).all():
+            raise FloatingPointError(f"Refusing to export non-finite 2NZQ scales in layer {name}")
+        if state.bias_tensor is not None and not torch.isfinite(state.bias_tensor.float()).all():
+            raise FloatingPointError(f"Refusing to export non-finite bias in layer {name}")
+    for name, tensor in full_state.items():
+        if tensor.is_floating_point() and not torch.isfinite(tensor.float()).all():
+            raise FloatingPointError(f"Refusing to export non-finite FP tensor {name}")
     total_weights = sum(state.weight_numel for state in qstates.values())
     total_groups = sum(state.scales.numel() for state in qstates.values())
     payload = {

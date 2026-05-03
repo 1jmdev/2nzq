@@ -37,6 +37,8 @@ Fine-tune with PQAFT and export packed 2NZQ weights:
 python scripts/train_pqaft.py --config config/smol135m_fineweb100m.json
 ```
 
+The default training dtype is `float32` because AdamW on raw FP16 weights can produce NaNs during QAT. If your GPU supports BF16 well, `"dtype": "bfloat16"` in the config is a reasonable faster alternative.
+
 Generate from the exported model:
 
 ```bash

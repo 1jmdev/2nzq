@@ -112,6 +112,13 @@ def set_tau(model: nn.Module, tau: float) -> None:
             module.tau = float(tau)
 
 
+@torch.no_grad()
+def clamp_scales(model: nn.Module, min_value: float = 1e-8) -> None:
+    for module in model.modules():
+        if isinstance(module, TwoNZQLinear):
+            module.scales.clamp_(min=min_value)
+
+
 def collect_quantized_states(model: nn.Module) -> dict[str, QuantizedLinearState]:
     states: dict[str, QuantizedLinearState] = {}
     for name, module in model.named_modules():

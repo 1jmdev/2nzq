@@ -11,7 +11,7 @@ from transformers import AutoModelForCausalLM, AutoTokenizer
 from .config import ensure_dir, load_config
 from .data import TokenBlockDataset, tokenize_fineweb_sample
 from .export import save_2nzq_model
-from .modules import replace_linears_for_qat, set_tau
+from .modules import clamp_scales, replace_linears_for_qat, set_tau
 from .schedule import pqaft_lr_factor, pqaft_tau
 
 
@@ -34,12 +34,13 @@ def train(cfg: dict) -> Path:
     output_dir = ensure_dir(cfg["output_dir"])
     tokenized_path = prepare_data(cfg)
     device = torch.device(cfg.get("device", "cuda" if torch.cuda.is_available() else "cpu"))
-    dtype = torch.float16 if device.type == "cuda" else torch.float32
+    dtype_name = cfg["training"].get("dtype", "float32")
+    dtype = {"float32": torch.float32, "float16": torch.float16, "bfloat16": torch.bfloat16}[dtype_name]
 
     tokenizer = AutoTokenizer.from_pretrained(cfg["model"]["name"], use_fast=True)
     if tokenizer.pad_token is None:
         tokenizer.pad_token = tokenizer.eos_token
-    model = AutoModelForCausalLM.from_pretrained(cfg["model"]["name"], torch_dtype=dtype)
+    model = AutoModelForCausalLM.from_pretrained(cfg["model"]["name"], dtype=dtype)
     model.config.use_cache = False
     quantized_layers = replace_linears_for_qat(
         model,
@@ -80,11 +81,16 @@ def train(cfg: dict) -> Path:
             batch = {k: v.to(device) for k, v in batch.items()}
             outputs = model(**batch)
             loss = outputs.loss / grad_accum
+            if not torch.isfinite(loss):
+                raise FloatingPointError(
+                    f"Non-finite loss at step {step}. Use training.dtype=float32 or lower the learning rates."
+                )
             loss.backward()
 
             if (step + 1) % grad_accum == 0:
                 torch.nn.utils.clip_grad_norm_(model.parameters(), float(cfg["training"].get("max_grad_norm", 1.0)))
                 optimizer.step()
+                clamp_scales(model)
                 optimizer.zero_grad(set_to_none=True)
 
             progress.set_postfix(loss=f"{loss.item() * grad_accum:.4f}", tau=f"{tau:.3f}")
